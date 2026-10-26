@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Smart Waste Management System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 Dashboard</h1>
+            <p>Real-time Waste Management Overview</p>
+        </header>
+
+        <nav>
+            <a href="/" class="nav-btn">Upload & Detect</a>
+            <a href="/dashboard" class="nav-btn active">Dashboard</a>
+        </nav>
+
+        <main>
+            <!-- Statistics Section -->
+            <section class="dashboard-section">
+                <h2>📈 Statistics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalWaste">0</div>
+                        <div class="stat-label">Total Detections</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="metalCount">0</div>
+                        <div class="stat-label">Metal Items</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="organicCount">0</div>
+                        <div class="stat-label">Organic Items</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="plasticCount">0</div>
+                        <div class="stat-label">Plastic Items</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Distribution Chart -->
+            <section class="dashboard-section">
+                <h2>📊 Waste Distribution</h2>
+                <div style="position: relative; height: 300px; margin-bottom: 30px;">
+                    <canvas id="wasteChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Bin Status Section -->
+            <section class="dashboard-section">
+                <h2>🗑️ Bin Status</h2>
+                <div class="bins-grid">
+                    <div class="bin-card" id="metalBin">
+                        <h3>Metal Bin</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="metalProgress" style="width: 0%">0%</div>
+                        </div>
+                        <div class="status" id="metalStatus">OK</div>
+                    </div>
+                    <div class="bin-card" id="organicBin">
+                        <h3>Organic Bin</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="organicProgress" style="width: 0%">0%</div>
+                        </div>
+                        <div class="status" id="organicStatus">OK</div>
+                    </div>
+                    <div class="bin-card" id="plasticBin">
+                        <h3>Plastic Bin</h3>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="plasticProgress" style="width: 0%">0%</div>
+                        </div>
+                        <div class="status" id="plasticStatus">OK</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Detections -->
+            <section class="dashboard-section">
+                <h2>📋 Recent Detections</h2>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Waste Type</th>
+                            <th>Confidence</th>
+                            <th>Bin Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center; color: #999;">No detections yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Reset Button -->
+            <section class="dashboard-section" style="text-align: center; margin-top: 50px;">
+                <button class="btn-danger" onclick="resetAllData()">🔄 Reset All Data</button>
+            </section>
+        </main>
+
+        <footer>
+            <p>🌍 Last Updated: <span id="lastUpdate">--:--:--</span> | © 2026 Smart Waste Management</p>
+        </footer>
+    </div>
+
+    <script>
+        let wasteChart = null;
+
+        // Initialize dashboard
+        function initDashboard() {
+            refreshDashboard();
+            setInterval(refreshDashboard, 3000); // Auto-refresh every 3 seconds
+        }
+
+        function refreshDashboard() {
+            // Get statistics
+            fetch('/get-stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('totalWaste').textContent = data.total_detections;
+                    document.getElementById('metalCount').textContent = data.metal_count;
+                    document.getElementById('organicCount').textContent = data.organic_count;
+                    document.getElementById('plasticCount').textContent = data.plastic_count;
+
+                    updateChart(data.distribution);
+                    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(error => console.error('Error fetching stats:', error));
+
+            // Get bin status
+            fetch('/get-bins')
+                .then(response => response.json())
+                .then(data => {
+                    data.bins.forEach(bin => {
+                        updateBinCard(bin);
+                    });
+                })
+                .catch(error => console.error('Error fetching bins:', error));
+
+            // Get history
+            fetch('/get-history')
+                .then(response => response.json())
+                .then(data => {
+                    updateHistoryTable(data.history);
+                })
+                .catch(error => console.error('Error fetching history:', error));
+        }
+
+        function updateBinCard(bin) {
+            const binType = bin.bin_name.toLowerCase().split(' ')[0];
+            const progressId = `${binType}Progress`;
+            const statusId = `${binType}Status`;
+
+            const progressFill = document.getElementById(progressId);
+            const statusBadge = document.getElementById(statusId);
+
+            if (progressFill) {
+                progressFill.style.width = bin.fill_level + '%';
+                progressFill.textContent = bin.fill_level + '%';
+            }
+
+            if (statusBadge) {
+                statusBadge.textContent = bin.status;
+                statusBadge.className = 'status';
+                if (bin.status === 'ALMOST_FULL') {
+                    statusBadge.classList.add('almost-full');
+                } else if (bin.status === 'FULL') {
+                    statusBadge.classList.add('full');
+                }
+            }
+        }
+
+        function updateChart(distribution) {
+            const ctx = document.getElementById('wasteChart').getContext('2d');
+
+            if (wasteChart) {
+                wasteChart.data.labels = ['Metal', 'Organic', 'Plastic'];
+                wasteChart.data.datasets[0].data = [
+                    distribution.metal,
+                    distribution.organic,
+                    distribution.plastic
+                ];
+                wasteChart.update();
+            } else {
+                wasteChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Metal', 'Organic', 'Plastic'],
+                        datasets: [{
+                            data: [
+                                distribution.metal,
+                                distribution.organic,
+                                distribution.plastic
+                            ],
+                            backgroundColor: [
+                                'rgba(108, 92, 231, 0.8)',
+                                'rgba(76, 175, 80, 0.8)',
+                                'rgba(255, 193, 7, 0.8)'
+                            ],
+                            borderColor: [
+                                '#667eea',
+                                '#4CAF50',
+                                '#FFC107'
+                            ],
+                            borderWidth: 3,
+                            borderRadius: 8
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    font: {
+                                        family: "'Poppins', sans-serif",
+                                        size: 14,
+                                        weight: '600'
+                                    },
+                                    padding: 20,
+                                    usePointStyle: true
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function updateHistoryTable(history) {
+            const tbody = document.getElementById('historyBody');
+
+            if (history.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #999;">No detections yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = history.map(item => `
+                <tr>
+                    <td>${new Date(item.detection_time).toLocaleString()}</td>
+                    <td><strong>${item.waste_type}</strong></td>
+                    <td>${(item.confidence * 100).toFixed(2)}%</td>
+                    <td>
+                        <span class="status-badge ${
+                            item.status === 'ALMOST_FULL' ? 'almost-full' : 
+                            item.status === 'FULL' ? 'full' : ''
+                        }">
+                            ${item.status}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function resetAllData() {
+            if (!confirm('⚠️ Are you sure? This will reset all bins and detection history.')) {
+                return;
+            }
+
+            fetch('/reset-data', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    alert('✅ ' + data.message);
+                    refreshDashboard();
+                })
+                .catch(error => alert('❌ Error: ' + error.message));
+        }
+
+        // Start dashboard on page load
+        window.addEventListener('load', initDashboard);
+    </script>
+</body>
+</html>

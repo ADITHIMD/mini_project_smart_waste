@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Waste Management System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>♻️ Smart Waste Management</h1>
+            <p>AI-Powered Waste Classification System</p>
+        </header>
+
+        <nav>
+            <a href="/" class="nav-btn active">Upload & Detect</a>
+            <a href="/dashboard" class="nav-btn">Dashboard</a>
+        </nav>
+
+        <main>
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📸</div>
+                    <h2>Drag & Drop Waste Image</h2>
+                    <p>or click to select file</p>
+                </div>
+                <input type="file" id="imageInput" accept="image/*" style="display: none;">
+
+                <div id="previewArea" style="display: none;">
+                    <img id="previewImage" alt="Preview">
+                    <div id="resultArea"></div>
+                    <button class="btn-secondary" onclick="resetUpload()">Upload Another Image</button>
+                </div>
+
+                <div id="errorBox" style="display: none;"></div>
+                <div id="loadingBox" style="display: none; text-align: center; margin-top: 30px;">
+                    <p style="color: var(--primary); font-size: 1.2em; font-weight: 600;">🔄 Analyzing waste image...</p>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>🌍 Helping to keep our planet clean | © 2026 Smart Waste Management</p>
+        </footer>
+    </div>
+
+    <script>
+        // ============= STATE MANAGEMENT =============
+        let isDetecting = false;
+
+        // ============= DOM ELEMENTS =============
+        const uploadArea = document.getElementById('uploadArea');
+        const imageInput = document.getElementById('imageInput');
+        const previewArea = document.getElementById('previewArea');
+        const previewImage = document.getElementById('previewImage');
+        const resultArea = document.getElementById('resultArea');
+        const errorBox = document.getElementById('errorBox');
+        const loadingBox = document.getElementById('loadingBox');
+
+        // ============= EVENT LISTENERS =============
+
+        uploadArea.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('drag-over');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('drag-over');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleImageSelect(files[0]);
+            }
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleImageSelect(e.target.files[0]);
+            }
+        });
+
+        // ============= FUNCTIONS =============
+
+        function handleImageSelect(file) {
+            if (!file.type.startsWith('image/')) {
+                showError('❌ Please select an image file');
+                return;
+            }
+
+            if (file.size > 16 * 1024 * 1024) {
+                showError('❌ Image size must be less than 16MB');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewArea.style.display = 'block';
+                uploadArea.style.display = 'none';
+                errorBox.style.display = 'none';
+
+                setTimeout(() => {
+                    if (!isDetecting) {
+                        detectWaste(file);
+                    }
+                }, 500);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function detectWaste(file) {
+            if (isDetecting) {
+                console.warn('⚠️ Detection already in progress');
+                return;
+            }
+
+            isDetecting = true;
+            const formData = new FormData();
+            formData.append('file', file);
+
+            loadingBox.style.display = 'block';
+            resultArea.innerHTML = '';
+
+            fetch('/detect-waste', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingBox.style.display = 'none';
+
+                if (data.error) {
+                    resultArea.innerHTML = `<div class="error-box">❌ ${data.error}</div>`;
+                } else {
+                    displayResult(data);
+                    
+                    if (data.bin_status === 'FULL') {
+                        setTimeout(() => playBuzzer(), 300);
+                    } else if (data.bin_status === 'ALMOST_FULL') {
+                        setTimeout(() => playBeep(), 300);
+                    }
+                }
+            })
+            .catch(error => {
+                loadingBox.style.display = 'none';
+                resultArea.innerHTML = `<div class="error-box">❌ Error: ${error.message}</div>`;
+            })
+            .finally(() => {
+                isDetecting = false;
+            });
+        }
+
+        function displayResult(data) {
+            let resultHTML = `
+                <div class="result-card">
+                    <h2>🎯 ${data.waste_type}</h2>
+                    <div class="confidence-box">
+                        <span class="confidence-text">Confidence Level</span>
+                        <div id="confidenceScore">${(data.confidence * 100).toFixed(2)}%</div>
+                    </div>
+                    <div class="bin-status">
+                        <h3>📦 Bin Status</h3>
+                        <div class="bin-info">
+                            <div style="flex: 1; text-align: left;">
+                                <strong>${data.bin_name}</strong>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: ${data.bin_fill_level}%">
+                                        ${data.bin_fill_level}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <span class="status-badge ${data.bin_status === 'ALMOST_FULL' ? 'almost-full' : data.bin_status === 'FULL' ? 'full' : ''}">
+                            ${data.bin_status}
+                        </span>
+                        <div class="timestamp">🕐 ${new Date(data.detection_time).toLocaleString()}</div>
+                    </div>
+                </div>
+            `;
+            resultArea.innerHTML = resultHTML;
+        }
+
+        function resetUpload() {
+            isDetecting = false;
+            imageInput.value = '';
+            previewArea.style.display = 'none';
+            uploadArea.style.display = 'block';
+            resultArea.innerHTML = '';
+            errorBox.style.display = 'none';
+        }
+
+        function showError(message) {
+            errorBox.textContent = message;
+            errorBox.style.display = 'block';
+        }
+
+        // ============= AUDIO FUNCTIONS =============
+
+        function playBuzzer() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const duration = 2;
+                const frequency = 800;
+                
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.type = 'square';
+                oscillator.frequency.value = frequency;
+                
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration);
+                
+                console.log('🔊 Buzzer sound played (FULL bin)');
+            } catch (e) {
+                console.log('Audio context not available:', e);
+            }
+        }
+
+        function playBeep() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const beepDuration = 0.3;
+                const pauseDuration = 0.2;
+                const frequency = 1000;
+                const beepCount = 3;
+                
+                for (let i = 0; i < beepCount; i++) {
+                    const startTime = audioContext.currentTime + (i * (beepDuration + pauseDuration));
+                    
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = frequency;
+                    
+                    gainNode.gain.setValueAtTime(0.2, startTime);
+                    gainNode.gain.setValueAtTime(0.2, startTime + beepDuration);
+                    gainNode.gain.setValueAtTime(0, startTime + beepDuration + 0.01);
+                    
+                    oscillator.start(startTime);
+                    oscillator.stop(startTime + beepDuration);
+                }
+                
+                console.log('⚠️ Warning beep sound played (ALMOST_FULL bin)');
+            } catch (e) {
+                console.log('Audio context not available:', e);
+            }
+        }
+    </script>
+</body>
+</html>
